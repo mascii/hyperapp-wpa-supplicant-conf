@@ -1,5 +1,4 @@
-import React from 'react';
-import ReactDOM from 'react-dom';
-import App from './app';
+import { app } from 'hyperapp';
+import { state, actions, view } from './app';
 
-ReactDOM.render(<App />, document.getElementById('main'));
+window.main = app(state, actions, view, document.getElementById('main'));

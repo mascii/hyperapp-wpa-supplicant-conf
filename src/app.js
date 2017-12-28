@@ -1,145 +1,125 @@
-import React, { Component } from 'react';
+import { h } from 'hyperapp';
 import PBKDF2 from 'crypto-js/pbkdf2';
 
-class App extends Component {
-  static makeBlob(content) {
-    return new Blob([content], { type: 'text/plain' });
-  }
+const makeBlob = content => new Blob([content], { type: 'text/plain' });
 
-  static makeConfig(items) {
-    let config = 'country=JP\n';
-    config += 'ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=netdev\n';
-    config += 'update_config=1\n';
+const makeConfig = (items) => {
+  let config = 'country=JP\n';
+  config += 'ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=netdev\n';
+  config += 'update_config=1\n';
 
-    config += items.map((item) => {
-      let network = 'network={\n';
-      network += `    ssid="${item.id}"\n`;
-      if (item.psk.length > 0) {
-        network += `    psk=${item.psk}\n`;
-      } else {
-        network += '    key_mgmt=NONE\n';
-      }
-      network += '}';
-      return network;
-    }).join('\n');
-
-    return config;
-  }
-
-  constructor() {
-    super();
-    this.state = {
-      items: [],
-      count: 0,
-      urlWPA: '#',
-      urlSSH: '#',
-    };
-  }
-
-  componentWillMount() {
-    this.updateUrlWPA(this.state.items);
-    if (!window.navigator.msSaveBlob) {
-      const urlSSH = window.URL.createObjectURL(this.constructor.makeBlob(''));
-      this.setState({ urlSSH });
+  config += items.map((item) => {
+    let network = 'network={\n';
+    network += `    ssid="${item.id}"\n`;
+    if (item.psk.length > 0) {
+      network += `    psk=${item.psk}\n`;
+    } else {
+      network += '    key_mgmt=NONE\n';
     }
-  }
+    network += '}';
+    return network;
+  }).join('\n');
 
-  componentDidMount() {
-    this.inputSSID.focus();
-  }
+  return config;
+};
 
-  addItem(e) {
+const makeUrlWPA = (items) => {
+  if (!window.navigator.msSaveBlob) {
+    const content = makeConfig(items);
+    return window.URL.createObjectURL(makeBlob(content));
+  }
+  return '#';
+};
+
+const makeUrlSSH = () => {
+  if (!window.navigator.msSaveBlob) {
+    return window.URL.createObjectURL(makeBlob(''));
+  }
+  return '#';
+};
+
+export const state = {
+  items: [],
+  urlWPA: makeUrlWPA([]),
+  urlSSH: makeUrlSSH(),
+};
+
+export const actions = {
+  addItem: e => (state) => {
     e.preventDefault();
     const newSSID = e.target.newSSID.value;
     const newPassphrase = e.target.newPassphrase.value;
 
-    if (newSSID.length === 0) return;
-
-    const count = this.state.count + 1;
-    const items = this.state.items.concat({
-      key: count,
-      id: newSSID,
-      psk: newPassphrase.length !== 0 ? PBKDF2(newPassphrase, newSSID, { keySize: 8, iterations: 4096 }).toString() : '',
-    });
-    this.updateUrlWPA(items);
-    this.setState({ items, count });
+    if (newSSID.length === 0) return state;
 
     e.target.newSSID.value = '';
     e.target.newPassphrase.value = '';
     e.target.newSSID.focus();
-  }
 
-  deleteItem(item) {
-    const items = this.state.items;
+    const items = state.items.concat({
+      id: newSSID,
+      psk: newPassphrase.length !== 0 ? PBKDF2(newPassphrase, newSSID, { keySize: 8, iterations: 4096 }).toString() : '',
+    });
+    const urlWPA = makeUrlWPA(items);
+
+    return { items, urlWPA };
+  },
+  deleteItem: item => (state) => {
+    const items = state.items;
     const index = items.indexOf(item);
     items.splice(index, 1);
-    this.setState({ items });
-    this.updateUrlWPA(items);
-  }
-
-  updateUrlWPA(items) {
-    if (!window.navigator.msSaveBlob) {
-      const content = this.constructor.makeConfig(items);
-      const urlWPA = window.URL.createObjectURL(this.constructor.makeBlob(content));
-      this.setState({ urlWPA });
-    }
-  }
-
-  downloadWPA() {
+    const urlWPA = makeUrlWPA(items);
+    return { items, urlWPA };
+  },
+  downloadWPA: () => (state) => {
     if (window.navigator.msSaveBlob) {
       const fileName = 'wpa_supplicant.conf';
-      const content = this.constructor.makeConfig(this.state.items);
-      window.navigator.msSaveBlob(this.constructor.makeBlob(content), fileName);
+      const content = makeConfig(state.items);
+      window.navigator.msSaveBlob(makeBlob(content), fileName);
     }
-  }
-
-  downloadSSH() {
+  },
+  downloadSSH: () => () => {
     if (window.navigator.msSaveBlob) {
       const fileName = 'ssh.txt';
-      window.navigator.msSaveBlob(this.constructor.makeBlob(''), fileName);
+      window.navigator.msSaveBlob(makeBlob(''), fileName);
     }
-  }
+  },
+};
 
-  render() {
-    const items = this.state.items.map(item => (
-      <li key={item.key}>
+export const view = (state, actions) => {
+  const items = state.items.map(item => (
+    <li>
         SSID: {item.id},
-        Security: <span className={(item.psk.length === 0) ? 'sec-weak' : ''}>
-          {(item.psk.length > 0) ? 'WPA2' : 'None'}
-        </span>
-        <button onClick={() => this.deleteItem(item)} className="button-small button-red">
-          削除
-        </button>
-      </li>
-    ));
-    return (
-      <div>
-        <form onSubmit={e => this.addItem(e)} autoComplete="off">
-          SSID: <input type="text" name="newSSID" ref={(input) => { this.inputSSID = input; }} />
-          Passphrase: <input type="password" name="newPassphrase" />
-          <button type="submit">追加</button>
-        </form>
-        <ul>
-          {items}
-        </ul>
-        <a
-          href={this.state.urlWPA}
-          onClick={() => this.downloadWPA()}
-          download="wpa_supplicant.conf"
-        >
-          <button>wpa_supplicant.conf作成</button>
-        </a>
-        <a
-          href={this.state.urlSSH}
-          onClick={() => this.downloadSSH()}
-          download="ssh.txt"
-        >
-          <button>ssh.txt作成</button>
-        </a>
-      </div>
-    );
-  }
-}
-
-export default App;
-
+        Security: <span class={(item.psk.length === 0) ? 'sec-weak' : ''}>{(item.psk.length > 0) ? 'WPA2' : 'None'}</span>
+      <button onclick={() => actions.deleteItem(item)} class="button-small button-red">
+        削除
+      </button>
+    </li>
+  ));
+  return (
+    <div>
+      <form onsubmit={actions.addItem} autocomplete="off">
+        SSID: <input type="text" name="newSSID" oncreate={e => e.focus()} />
+        Passphrase: <input type="password" name="newPassphrase" />
+        <button type="submit">追加</button>
+      </form>
+      <ul>
+        {items}
+      </ul>
+      <a
+        href={state.urlWPA}
+        onclick={actions.downloadWPA}
+        download="wpa_supplicant.conf"
+      >
+        <button>wpa_supplicant.conf作成</button>
+      </a>
+      <a
+        href={state.urlSSH}
+        onclick={actions.downloadSSH}
+        download="ssh.txt"
+      >
+        <button>ssh.txt作成</button>
+      </a>
+    </div>
+  );
+};
